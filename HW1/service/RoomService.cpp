@@ -31,5 +31,6 @@ void ChatServices::room(const Session &s, const Packet &p) {
     default:
         error(s, "Invalid room request");
     }
+    
 }
 } // namespace chat
