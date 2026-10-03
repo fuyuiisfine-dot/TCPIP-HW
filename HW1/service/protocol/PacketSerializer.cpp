@@ -1,20 +1,40 @@
 #include "protocol/Packet.h"
 #include <stdexcept>
 namespace chat {
-static void u32(std::string& out,uint32_t n) { n=htonl(n); out.append(reinterpret_cast<const char*>(&n),4); }
-static void u16(std::string& out,uint16_t n) { n=htons(n); out.append(reinterpret_cast<const char*>(&n),2); }
-std::string encodePacket(const Packet& p) {
- if(p.fields.size()>16) throw std::runtime_error("Too many fields");
- std::string body;
- for(const auto& field:p.fields) {
-  if(field.size()>MaxPayload || body.size()+4+field.size()>MaxPayload) throw std::runtime_error("Packet too large");
-  u32(body,static_cast<uint32_t>(field.size())); body+=field;
- }
- std::string out; u32(out,Magic); u16(out,Version); u16(out,static_cast<uint16_t>(p.type)); u32(out,static_cast<uint32_t>(body.size())); return out+body;
+static void appendUint32(std::string &output, uint32_t value) {
+    value = htonl(value);
+    output.append(reinterpret_cast<const char *>(&value), 4);
 }
-bool sendPacket(SOCKET socket,const Packet& p) {
- const auto bytes=encodePacket(p); size_t offset=0;
- while(offset<bytes.size()) { int n=send(socket,bytes.data()+offset,static_cast<int>(bytes.size()-offset),0); if(n<=0) return false; offset+=n; }
- return true;
+static void appendUint16(std::string &output, uint16_t value) {
+    value = htons(value);
+    output.append(reinterpret_cast<const char *>(&value), 2);
 }
+std::string encodePacket(const Packet &packet) {
+    if (packet.fields.size() > 16)
+        throw std::runtime_error("Too many fields");
+    std::string body;
+    for (const auto &field : packet.fields) {
+        if (field.size() > MaxPayload || body.size() + 4 + field.size() > MaxPayload)
+            throw std::runtime_error("Packet too large");
+        appendUint32(body, static_cast<uint32_t>(field.size()));
+        body += field;
+    }
+    std::string output;
+    appendUint32(output, Magic);
+    appendUint16(output, Version);
+    appendUint16(output, static_cast<uint16_t>(packet.type));
+    appendUint32(output, static_cast<uint32_t>(body.size()));
+    return output + body;
 }
+bool sendPacket(SOCKET socket, const Packet &packet) {
+    const auto bytes = encodePacket(packet);
+    size_t offset = 0;
+    while (offset < bytes.size()) {
+        int value = send(socket, bytes.data() + offset, static_cast<int>(bytes.size() - offset), 0);
+        if (value <= 0)
+            return false;
+        offset += value;
+    }
+    return true;
+}
+} // namespace chat

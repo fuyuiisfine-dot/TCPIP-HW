@@ -1,0 +1,54 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Chat: Server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/HW1/build/chat_server.exe",
+            "args": ["9000", "127.0.0.1"],
+            "cwd": "${workspaceFolder}/HW1",
+            "environment": [{ "name": "PATH", "value": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }],
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "preLaunchTask": "Chat: Build"
+        },
+        {
+            "name": "Chat: GUI",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/HW1/build/gui/chat_gui.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/HW1/build/gui",
+            "environment": [{ "name": "PATH", "value": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "preLaunchTask": "Chat: Build"
+        },
+        {
+            "name": "Chat: CLI Client",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/HW1/build/chat_client.exe",
+            "args": ["${input:nickname}", "127.0.0.1", "9000"],
+            "cwd": "${workspaceFolder}/HW1",
+            "environment": [{ "name": "PATH", "value": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }],
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "preLaunchTask": "Chat: Build"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Chat: Server + GUI",
+            "configurations": ["Chat: Server", "Chat: GUI"],
+            "stopAll": true
+        }
+    ],
+    "inputs": [
+        { "id": "nickname", "type": "promptString", "description": "聊天暱稱（英文字母、數字、_ 或 -）", "default": "Alice" }
+    ]
+}

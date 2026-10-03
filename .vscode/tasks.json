@@ -1,0 +1,27 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Chat: Configure",
+            "type": "process",
+            "command": "C:/Program Files/CMake/bin/cmake.exe",
+            "args": ["-S", "${workspaceFolder}/HW1", "-B", "${workspaceFolder}/HW1/build", "-G", "MinGW Makefiles", "-DCMAKE_BUILD_TYPE=Debug"],
+            "options": {
+                "env": { "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Chat: Build",
+            "type": "process",
+            "command": "C:/Program Files/CMake/bin/cmake.exe",
+            "args": ["--build", "${workspaceFolder}/HW1/build", "-j", "4"],
+            "options": {
+                "env": { "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }
+            },
+            "dependsOn": "Chat: Configure",
+            "problemMatcher": ["$gcc"],
+            "group": { "kind": "build", "isDefault": true }
+        }
+    ]
+}

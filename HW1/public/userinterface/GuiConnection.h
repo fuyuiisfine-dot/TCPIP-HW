@@ -16,14 +16,15 @@ struct GuiEvent {
     std::string text;
 };
 class GuiConnection {
-public:
+  public:
     explicit GuiConnection(HWND window, std::filesystem::path downloads);
     ~GuiConnection();
     void start(std::string address, unsigned short port, std::string nickname);
     void stop();
     bool send(Packet packet);
     std::deque<GuiEvent> drain();
-private:
+
+  private:
     HWND window_;
     std::filesystem::path downloads_;
     std::atomic<SOCKET> socket_{INVALID_SOCKET};
@@ -37,8 +38,8 @@ private:
     size_t outgoingBytes_ = 0;
     void cancel();
     void emit(GuiEvent event);
-    void receiveLoop(const std::string&, unsigned short, const std::string&);
+    void receiveLoop(const std::string &, unsigned short, const std::string &);
     void sendLoop();
-    std::string saveFile(const std::string& originalName, const std::string& content);
+    std::string saveFile(const std::string &originalName, const std::string &content);
 };
-}
+} // namespace chat

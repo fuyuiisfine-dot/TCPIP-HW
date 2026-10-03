@@ -12,16 +12,20 @@ struct ClientSession {
     std::mutex sendMutex;
     bool closed = false; // guarded by sendMutex
 
-    bool send(const Packet& packet) {
+    bool send(const Packet &packet) {
         std::lock_guard<std::mutex> lock(sendMutex);
-        if (closed) return false;
-        if (sendPacket(socket, packet)) return true;
+        if (closed)
+            return false;
+        if (sendPacket(socket, packet))
+            return true;
         shutdown(socket, SD_BOTH);
         return false;
     }
     // Used only during server shutdown, after the listener has been closed.
     // closesocket cancels a pending blocking recv, including a partial frame.
-    void interrupt() { close(); }
+    void interrupt() {
+        close();
+    }
     void close() {
         std::lock_guard<std::mutex> lock(sendMutex);
         if (!closed) {
@@ -31,4 +35,4 @@ struct ClientSession {
         }
     }
 };
-}
+} // namespace chat

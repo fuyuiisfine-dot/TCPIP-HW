@@ -9,7 +9,22 @@ add_library(chat_protocol service/protocol/PacketParser.cpp service/protocol/Pac
 target_include_directories(chat_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions(chat_protocol PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0601)
 target_link_libraries(chat_protocol PUBLIC ws2_32)
-add_executable(chat_server main.cpp service/Server.cpp service/AuthService.cpp service/RoomService.cpp service/RoomSessionService.cpp service/MessageService.cpp service/FileService.cpp repository/UserRepository.cpp repository/RoomRepository.cpp repository/MessageRepository.cpp API/AuthHandler.cpp API/RoomHandler.cpp API/MessageHandler.cpp API/FileHandler.cpp)
+add_executable(chat_server
+  main.cpp
+  service/Server.cpp
+  service/AuthService.cpp
+  service/RoomService.cpp
+  service/RoomSessionService.cpp
+  service/MessageService.cpp
+  service/FileService.cpp
+  repository/UserRepository.cpp
+  repository/RoomRepository.cpp
+  repository/MessageRepository.cpp
+  API/AuthHandler.cpp
+  API/RoomHandler.cpp
+  API/MessageHandler.cpp
+  API/FileHandler.cpp
+)
 target_link_libraries(chat_server PRIVATE chat_protocol)
 add_executable(chat_client public/userinterface/main.cpp)
 target_link_libraries(chat_client PRIVATE chat_protocol)
@@ -31,7 +46,12 @@ endif()
 # Embed the original artwork so launching from another directory still works.
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/asset/聊天室背景.png" "${CMAKE_CURRENT_BINARY_DIR}/chat_background.png" COPYONLY)
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/chat_gui.rc" "101 RCDATA \"${CMAKE_CURRENT_BINARY_DIR}/chat_background.png\"\n")
-add_executable(chat_gui WIN32 public/userinterface/InlineImage.cpp public/userinterface/GuiMain.cpp public/userinterface/GuiConnection.cpp "${CMAKE_CURRENT_BINARY_DIR}/chat_gui.rc")
+add_executable(chat_gui WIN32
+  public/userinterface/InlineImage.cpp
+  public/userinterface/GuiMain.cpp
+  public/userinterface/GuiConnection.cpp
+  "${CMAKE_CURRENT_BINARY_DIR}/chat_gui.rc"
+)
 target_compile_definitions(chat_gui PRIVATE UNICODE _UNICODE)
 target_link_libraries(chat_gui PRIVATE chat_protocol uuid gdiplus comctl32 comdlg32 ole32 shell32)
 
