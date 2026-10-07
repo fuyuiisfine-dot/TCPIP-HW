@@ -45,7 +45,8 @@ endif()
 
 # Embed the original artwork so launching from another directory still works.
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/asset/聊天室背景.png" "${CMAKE_CURRENT_BINARY_DIR}/chat_background.png" COPYONLY)
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/chat_gui.rc" "101 RCDATA \"${CMAKE_CURRENT_BINARY_DIR}/chat_background.png\"\n")
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/asset/chatroom_asset.png" "${CMAKE_CURRENT_BINARY_DIR}/chat_assets.png" COPYONLY)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/chat_gui.rc" "101 RCDATA \"${CMAKE_CURRENT_BINARY_DIR}/chat_background.png\"\n102 RCDATA \"${CMAKE_CURRENT_BINARY_DIR}/chat_assets.png\"\n")
 add_executable(chat_gui WIN32
   public/userinterface/InlineImage.cpp
   public/userinterface/GuiMain.cpp

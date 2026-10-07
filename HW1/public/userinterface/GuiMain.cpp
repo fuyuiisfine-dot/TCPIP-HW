@@ -16,8 +16,46 @@
 
 using namespace chat;
 namespace {
-constexpr COLORREF Ink = RGB(235, 232, 238), Muted = RGB(153, 153, 169);
-constexpr COLORREF Surface = RGB(24, 25, 34), Accent = RGB(196, 48, 73);
+constexpr COLORREF Ink = RGB(242, 241, 245), Muted = RGB(163, 164, 177);
+constexpr COLORREF Surface = RGB(28, 29, 35), Accent = RGB(239, 38, 58);
+
+// The supplied asset is a 1536 x 1024 contact sheet, not a transparent sprite sheet.
+// Sample only the icon tiles; never stretch the labels or composite sheet into the UI.
+struct Artwork {
+    IStream *stream = nullptr;
+    std::unique_ptr<Gdiplus::Bitmap> bitmap;
+    ~Artwork() {
+        bitmap.reset();
+        if (stream)
+            stream->Release();
+    }
+    void load(int id) {
+        HRSRC resource = FindResourceW(nullptr, MAKEINTRESOURCEW(id), MAKEINTRESOURCEW(10));
+        if (!resource)
+            return;
+        DWORD size = SizeofResource(nullptr, resource);
+        void *source = LockResource(LoadResource(nullptr, resource));
+        if (!source || !size)
+            return;
+        HGLOBAL data = GlobalAlloc(GMEM_MOVEABLE, size);
+        if (!data)
+            return;
+        void *destination = GlobalLock(data);
+        if (!destination) {
+            GlobalFree(data);
+            return;
+        }
+        CopyMemory(destination, source, size);
+        GlobalUnlock(data);
+        if (FAILED(CreateStreamOnHGlobal(data, TRUE, &stream))) {
+            GlobalFree(data);
+            return;
+        }
+        bitmap.reset(Gdiplus::Bitmap::FromStream(stream));
+        if (!bitmap || bitmap->GetLastStatus() != Gdiplus::Ok)
+            bitmap.reset();
+    }
+};
 enum Control {
     Nick = 101,
     Host,
@@ -69,13 +107,13 @@ struct App {
     HFONT font{}, small{}, title{};
     HBRUSH brush = CreateSolidBrush(Surface);
     std::unique_ptr<GuiConnection> network;
-    IStream *imageStream = nullptr;
-    std::unique_ptr<Gdiplus::Bitmap> background;
+    Artwork background, assets;
     std::filesystem::path downloads = executableDirectory() / L"downloads";
     bool connected = false, busy = false, composing = false;
     std::wstring nickname, currentRoom = L"尚未加入", status = L"離線 · 輸入暱稱後連線";
     float scale = 1;
-    int width = 1200, height = 780, chatX = 252, chatW = 640;
+    int width = 1200, height = 780, chatX = 272, chatW = 640;
+    HWND hovered = nullptr;
     HWND get(int id) const {
         return controls[id - 100];
     }
@@ -84,9 +122,6 @@ struct App {
     }
     ~App() {
         network.reset();
-        background.reset();
-        if (imageStream)
-            imageStream->Release();
         DeleteObject(font);
         DeleteObject(small);
         DeleteObject(title);
@@ -114,6 +149,30 @@ struct App {
         DrawTextW(dc, text.c_str(), -1, &rect,
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
     }
+    void tile(Gdiplus::Graphics &g, int sx, int sy, int sw, int sh,
+              int x, int y, int w, int h) {
+        if (!assets.bitmap)
+            return;
+        float fx = assets.bitmap->GetWidth() / 1536.0f;
+        float fy = assets.bitmap->GetHeight() / 1024.0f;
+        g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+        g.DrawImage(assets.bitmap.get(), Gdiplus::Rect(px(x), px(y), px(w), px(h)),
+                    sx * fx, sy * fy, sw * fx, sh * fy, Gdiplus::UnitPixel);
+    }
+    void card(Gdiplus::Graphics &g, int x, int y, int w, int h,
+              Gdiplus::Color fill, Gdiplus::Color border, int radius = 12) {
+        Gdiplus::GraphicsPath path;
+        int d = px(radius * 2), l = px(x), t = px(y), r = px(x + w), b = px(y + h);
+        path.AddArc(l, t, d, d, 180, 90);
+        path.AddArc(r - d, t, d, d, 270, 90);
+        path.AddArc(r - d, b - d, d, d, 0, 90);
+        path.AddArc(l, b - d, d, d, 90, 90);
+        path.CloseFigure();
+        Gdiplus::SolidBrush brush(fill);
+        Gdiplus::Pen pen(border, std::max(1.0f, scale));
+        g.FillPath(&brush, &path);
+        g.DrawPath(&pen, &path);
+    }
     void append(const std::wstring &text, COLORREF color = Ink) {
         HWND log = get(Transcript);
         if (GetWindowTextLengthW(log) > 100000) {
@@ -138,6 +197,7 @@ struct App {
         for (int id : {Input, Send, File, History})
             EnableWindow(get(id), connected && !currentRoom.empty());
         SetWindowTextW(get(Connect), connected ? L"中斷連線" : busy ? L"取消連線" : L"連線聊天室");
+        InvalidateRect(get(Rooms), nullptr, FALSE);
         InvalidateRect(window, nullptr, FALSE);
     }
     bool submit(Packet packet) {
@@ -151,23 +211,26 @@ struct App {
         GetClientRect(window, &rect);
         width = static_cast<int>(rect.right / scale);
         height = static_cast<int>(rect.bottom / scale);
-        chatW = std::max(490, width - 560);
-        place(Nick, 40, 137, 140, 30);
-        place(Host, 196, 137, 164, 30);
-        place(Port, 376, 137, 70, 30);
-        place(Connect, 462, 133, 128, 38);
-        place(Downloads, chatX + chatW - 146, 133, 130, 38);
-        place(Refresh, 156, 233, 64, 28);
-        place(Rooms, 40, 277, 180, std::max(80, height - 503));
-        place(Join, 40, height - 210, 86, 32);
-        place(Leave, 134, height - 210, 86, 32);
-        place(RoomName, 40, height - 139, 180, 30);
-        place(Create, 40, height - 95, 180, 36);
-        place(History, chatX + chatW - 106, 230, 90, 30);
-        place(Transcript, chatX + 16, 278, chatW - 32, height - 434);
-        place(Input, chatX + 16, height - 140, chatW - 32, 58);
-        place(File, chatX + 16, height - 66, 104, 34);
-        place(Send, chatX + chatW - 116, height - 66, 100, 34);
+        chatW = std::max(490, width - chatX - std::max(308, width / 4 + 24));
+        place(Nick, 40, 140, 200, 30);
+        place(Host, 40, 204, 200, 30);
+        place(Port, 40, 268, 70, 32);
+        place(Connect, 120, 266, 120, 36);
+        place(Downloads, chatX + chatW - 130, 30, 130, 36);
+        place(Refresh, 176, 333, 64, 28);
+        place(Rooms, 40, 376, 200, std::max(60, height - 604));
+        place(Join, 40, height - 216, 96, 34);
+        place(Leave, 144, height - 216, 96, 34);
+        place(RoomName, 40, height - 140, 200, 30);
+        place(Create, 40, height - 94, 200, 38);
+        place(History, chatX + chatW - 110, 108, 94, 32);
+        place(Transcript, chatX + 16, 164, chatW - 32, height - 342);
+        place(Input, chatX + 22, height - 150, chatW - 44, 58);
+        place(File, chatX + 16, height - 70, 112, 36);
+        place(Send, chatX + chatW - 116, height - 70, 100, 36);
+        // Leave padding around RichEdit text, including inline image previews.
+        RECT inset{px(12), px(12), px(chatW - 60), px(height - 366)};
+        SendMessageW(get(Transcript), EM_SETRECT, 0, reinterpret_cast<LPARAM>(&inset));
         InvalidateRect(window, nullptr, TRUE);
     }
     void paint() {
@@ -182,44 +245,64 @@ struct App {
         {
             Gdiplus::Graphics graphics(memory);
             graphics.Clear(Gdiplus::Color(16, 17, 24));
-            if (background) {
-                float factor = std::max(float(rect.right) / background->GetWidth(),
-                                        float(rect.bottom) / background->GetHeight());
-                float w = background->GetWidth() * factor, h = background->GetHeight() * factor;
+            graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            if (background.bitmap) {
+                float factor = std::max(float(rect.right) / background.bitmap->GetWidth(),
+                                        float(rect.bottom) / background.bitmap->GetHeight());
+                float w = background.bitmap->GetWidth() * factor, h = background.bitmap->GetHeight() * factor;
                 graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
-                graphics.DrawImage(background.get(), Gdiplus::RectF((rect.right - w) / 2,
+                graphics.DrawImage(background.bitmap.get(), Gdiplus::RectF((rect.right - w) / 2,
                                                                     (rect.bottom - h) / 2, w, h));
             }
-            Gdiplus::SolidBrush shade(Gdiplus::Color(70, 9, 10, 18));
+            Gdiplus::SolidBrush shade(Gdiplus::Color(45, 9, 10, 18));
             graphics.FillRectangle(&shade, 0, 0, rect.right, rect.bottom);
-            Gdiplus::SolidBrush panel(Gdiplus::Color(236, 17, 18, 26));
-            graphics.FillRectangle(&panel, px(24), px(92), px(chatX + chatW - 24), px(102));
-            graphics.FillRectangle(&panel, px(24), px(212), px(212), px(height - 236));
-            graphics.FillRectangle(&panel, px(chatX), px(212), px(chatW), px(height - 236));
-            Gdiplus::SolidBrush red(Gdiplus::Color(228, 64, 89));
+            Gdiplus::LinearGradientBrush veil(Gdiplus::Point(0, 0),
+                Gdiplus::Point(rect.right, 0), Gdiplus::Color(225, 13, 14, 20),
+                Gdiplus::Color(15, 13, 14, 20));
+            graphics.FillRectangle(&veil, 0, 0, rect.right, rect.bottom);
+            auto panel = Gdiplus::Color(244, 20, 21, 28);
+            auto edge = Gdiplus::Color(255, 52, 53, 63);
+            card(graphics, 24, 92, 232, height - 116, panel, edge);
+            card(graphics, chatX, 92, chatW, height - 116, panel, edge);
+            card(graphics, chatX + 12, height - 162, chatW - 24, 80,
+                 Gdiplus::Color(255, 28, 29, 35), edge, 8);
+            card(graphics, chatX + chatW + 16, height - 187,
+                 std::max(264, width - chatX - chatW - 40), 163,
+                 Gdiplus::Color(225, 20, 21, 28), edge);
+            Gdiplus::Pen divider(edge, scale);
+            graphics.DrawLine(&divider, px(chatX + 16), px(152), px(chatX + chatW - 16), px(152));
+            graphics.DrawLine(&divider, px(40), px(320), px(240), px(320));
+            tile(graphics, 134, 525, 80, 66, 40, 335, 28, 24);
+            Gdiplus::SolidBrush red(Gdiplus::Color(239, 38, 58));
             graphics.FillRectangle(&red, px(24), px(24), px(4), px(42));
+            graphics.FillRectangle(&red, px(chatX + 16), px(112), px(3), px(18));
+            Gdiplus::SolidBrush indicator(connected ? Gdiplus::Color(106, 215, 168)
+                : busy ? Gdiplus::Color(244, 182, 69) : Gdiplus::Color(137, 139, 153));
+            graphics.FillEllipse(&indicator, px(chatX + chatW + 32), px(height - 156), px(8), px(8));
         }
         label(memory, L"夜航  /  NIGHTLINK", 40, 20, 600, 38, title, Ink);
         label(memory, L"留一盞燈，等一句訊息。", 42, 60, 500, 22, small, Muted);
-        label(memory, L"暱稱", 40, 107, 140, 22, small, Muted);
-        label(memory, L"伺服器 IPv4", 196, 107, 164, 22, small, Muted);
-        label(memory, L"連接埠", 376, 107, 70, 22, small, Muted);
-        label(memory, L"房間", 40, 231, 100, 32, font, Ink);
-        label(memory, L"建立新房間", 40, height - 171, 180, 24, small, Muted);
+        label(memory, L"暱稱 / NICKNAME", 40, 110, 200, 22, small, Muted);
+        label(memory, L"伺服器 IPv4", 40, 178, 200, 22, small, Muted);
+        label(memory, L"連接埠", 40, 242, 70, 22, small, Muted);
+        label(memory, L"房間頻道", 76, 333, 100, 28, font, Ink);
+        label(memory, L"建立新房間", 40, height - 170, 180, 24, small, Muted);
         label(memory,
               L"#  " +
                   (connected ? (currentRoom.empty() ? L"尚未加入房間" : currentRoom) : L"等待連線"),
-              chatX + 16, 230, chatW - 130, 32, font, Ink);
-        label(memory, L"Enter 傳送 · Shift + Enter 換行", chatX + 130, height - 63, chatW - 250, 28,
+              chatX + 30, 102, chatW - 150, 28, font, Ink);
+        label(memory, connected ? L"與頻道裡的人聊聊吧。" : L"從左側設定連線，開始今晚的對話。",
+              chatX + 30, 130, chatW - 150, 18, small, Muted);
+        label(memory, L"Enter 傳送 · Shift + Enter 換行", chatX + 140, height - 67, chatW - 264, 28,
               small, Muted);
         label(memory,
-              connected ? L"●  ONLINE"
-              : busy    ? L"●  CONNECTING"
-                        : L"○  OFFLINE",
-              chatX + chatW + 24, height - 155, 245, 28, font,
+              connected ? L"ONLINE / 已連線"
+              : busy    ? L"CONNECTING / 連線中"
+                        : L"OFFLINE / 離線",
+              chatX + chatW + 50, height - 164, 220, 28, font,
               connected ? RGB(138, 218, 185) : Ink);
-        label(memory, status, chatX + chatW + 24, height - 121, 245, 26, small, Ink);
-        label(memory, L"NIGHTLINK / 私人頻道", chatX + chatW + 24, height - 71, 245, 22, small,
+        label(memory, status, chatX + chatW + 32, height - 126, 232, 26, small, Ink);
+        label(memory, L"NIGHTLINK / 今晚，也有人在。", chatX + chatW + 32, height - 71, 232, 22, small,
               Muted);
         BitBlt(dc, 0, 0, rect.right, rect.bottom, memory, 0, 0, SRCCOPY);
         SelectObject(memory, previous);
@@ -230,22 +313,76 @@ struct App {
     void drawButton(DRAWITEMSTRUCT *item) {
         bool enabled = IsWindowEnabled(item->hwndItem) != FALSE;
         bool primary = item->CtlID == Connect || item->CtlID == Send;
-        COLORREF color = !enabled ? RGB(32, 33, 42) : primary ? Accent : RGB(43, 44, 56);
-        if (item->itemState & ODS_SELECTED)
-            color = RGB(120, 36, 55);
-        HBRUSH fill = CreateSolidBrush(color);
-        FillRect(item->hDC, &item->rcItem, fill);
-        DeleteObject(fill);
+        bool hot = enabled && hovered == item->hwndItem;
+        bool pressed = enabled && (item->itemState & ODS_SELECTED);
+        COLORREF color = !enabled ? RGB(33, 34, 41) : primary ? Accent : RGB(37, 38, 47);
+        if (hot)
+            color = primary ? RGB(255, 55, 73) : RGB(58, 37, 47);
+        if (pressed)
+            color = RGB(151, 27, 45);
+        int w = static_cast<int>((item->rcItem.right - item->rcItem.left) / scale);
+        int h = static_cast<int>((item->rcItem.bottom - item->rcItem.top) / scale);
+        {
+            Gdiplus::Graphics g(item->hDC);
+            g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            g.Clear(Gdiplus::Color(20, 21, 28));
+            card(g, 1, 1, w - 2, h - 2,
+                 Gdiplus::Color(255, GetRValue(color), GetGValue(color), GetBValue(color)),
+                 hot ? Gdiplus::Color(239, 38, 58) : Gdiplus::Color(62, 63, 72), 7);
+            if (item->CtlID == Send) {
+                // Each icon's source includes its intended background and state.
+                int sx = !enabled ? 1286 : pressed ? 1140 : hot ? 1009 : 879;
+                tile(g, sx, 194, 80, 58, 9, (h - 22) / 2, 30, 22);
+            } else if (enabled && (item->CtlID == File || item->CtlID == Create || item->CtlID == Leave)) {
+                int sx = item->CtlID == File ? 434 : item->CtlID == Create ? 252 : 742;
+                int sy = item->CtlID == File ? 352 : 539;
+                tile(g, sx, sy, 44, 44, 9, (h - 22) / 2, 22, 22);
+            }
+        }
         SetBkMode(item->hDC, TRANSPARENT);
         SetTextColor(item->hDC, enabled ? Ink : RGB(92, 93, 108));
         SelectObject(item->hDC, font);
         auto text = value(item->hwndItem);
         RECT rect = item->rcItem;
+        if (item->CtlID == Send || (enabled && (item->CtlID == File || item->CtlID == Create || item->CtlID == Leave)))
+            rect.left += px(28);
         DrawTextW(item->hDC, text.c_str(), -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         if (item->itemState & ODS_FOCUS) {
             InflateRect(&rect, -3, -3);
             DrawFocusRect(item->hDC, &rect);
         }
+    }
+    void drawRoom(DRAWITEMSTRUCT *item) {
+        if (item->itemID == static_cast<UINT>(-1))
+            return;
+        auto length = SendMessageW(get(Rooms), LB_GETTEXTLEN, item->itemID, 0);
+        if (length == LB_ERR || length > 32)
+            return;
+        std::wstring room(static_cast<size_t>(length) + 1, L'\0');
+        SendMessageW(get(Rooms), LB_GETTEXT, item->itemID, reinterpret_cast<LPARAM>(room.data()));
+        room.resize(static_cast<size_t>(length));
+        bool selected = item->itemState & ODS_SELECTED;
+        HBRUSH fill = CreateSolidBrush(selected ? RGB(62, 32, 43) : Surface);
+        FillRect(item->hDC, &item->rcItem, fill);
+        DeleteObject(fill);
+        RECT rect = item->rcItem;
+        if (selected) {
+            RECT marker = rect;
+            marker.right = marker.left + px(3);
+            fill = CreateSolidBrush(Accent);
+            FillRect(item->hDC, &marker, fill);
+            DeleteObject(fill);
+        }
+        rect.left += px(12);
+        rect.right -= px(8);
+        SetBkMode(item->hDC, TRANSPARENT);
+        SetTextColor(item->hDC, room == currentRoom ? RGB(255, 144, 160) : Ink);
+        SelectObject(item->hDC, font);
+        auto text = L"#  " + room;
+        DrawTextW(item->hDC, text.c_str(), -1, &rect,
+                  DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+        if (item->itemState & ODS_FOCUS)
+            DrawFocusRect(item->hDC, &rect);
     }
     void connect() {
         if (busy || connected) {
@@ -474,6 +611,43 @@ struct App {
     }
     void initialize();
 };
+LRESULT CALLBACK buttonProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam,
+                                 UINT_PTR, DWORD_PTR data) {
+    auto app = reinterpret_cast<App *>(data);
+    if (message == WM_MOUSEMOVE && app->hovered != hwnd) {
+        HWND previous = app->hovered;
+        app->hovered = hwnd;
+        if (previous)
+            InvalidateRect(previous, nullptr, FALSE);
+        InvalidateRect(hwnd, nullptr, FALSE);
+        TRACKMOUSEEVENT track{sizeof track, TME_LEAVE, hwnd, 0};
+        TrackMouseEvent(&track);
+    } else if (message == WM_MOUSELEAVE) {
+        if (app->hovered == hwnd)
+            app->hovered = nullptr;
+        InvalidateRect(hwnd, nullptr, FALSE);
+    }
+    return DefSubclassProc(hwnd, message, wParam, lParam);
+}
+LRESULT CALLBACK roomsProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam,
+                                UINT_PTR, DWORD_PTR data) {
+    LRESULT result = DefSubclassProc(hwnd, message, wParam, lParam);
+    if (message == WM_PAINT && SendMessageW(hwnd, LB_GETCOUNT, 0, 0) == 0) {
+        auto app = reinterpret_cast<App *>(data);
+        HDC dc = GetDC(hwnd);
+        HGDIOBJ previous = SelectObject(dc, app->small);
+        RECT rect;
+        GetClientRect(hwnd, &rect);
+        InflateRect(&rect, -app->px(12), -app->px(14));
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, Muted);
+        DrawTextW(dc, app->connected ? L"按「更新」取得房間" : L"連線後顯示房間", -1, &rect,
+                  DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+        SelectObject(dc, previous);
+        ReleaseDC(hwnd, dc);
+    }
+    return result;
+}
 LRESULT CALLBACK inputProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR,
                                 DWORD_PTR data) {
     auto app = reinterpret_cast<App *>(data);
@@ -501,30 +675,12 @@ void App::initialize() {
                         CLEARTYPE_QUALITY, 0, L"Microsoft JhengHei UI");
     title = CreateFontW(-px(27), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0,
                         CLEARTYPE_QUALITY, 0, L"Microsoft JhengHei UI");
-    HRSRC resource = FindResourceW(nullptr, MAKEINTRESOURCEW(101), MAKEINTRESOURCEW(10));
-    if (resource) {
-        DWORD size = SizeofResource(nullptr, resource);
-        void *source = LockResource(LoadResource(nullptr, resource));
-        HGLOBAL data = GlobalAlloc(GMEM_MOVEABLE, size);
-        if (data) {
-            void *destination = GlobalLock(data);
-            if (destination) {
-                CopyMemory(destination, source, size);
-                GlobalUnlock(data);
-                if (SUCCEEDED(CreateStreamOnHGlobal(data, TRUE, &imageStream))) {
-                    background.reset(Gdiplus::Bitmap::FromStream(imageStream));
-                    if (background->GetLastStatus() != Gdiplus::Ok)
-                        background.reset();
-                } else
-                    GlobalFree(data);
-            } else
-                GlobalFree(data);
-        }
-    }
+    background.load(101);
+    assets.load(102);
     add(Nick, L"EDIT", L"", ES_AUTOHSCROLL);
     add(Host, L"EDIT", L"", ES_AUTOHSCROLL);
     SendMessageW(get(Host), EM_SETCUEBANNER, FALSE,
-                 reinterpret_cast<LPARAM>(L"伺服器的 Tailscale 或區網 IPv4"));
+                 reinterpret_cast<LPARAM>(L"Tailscale 或區網 IPv4"));
     add(Port, L"EDIT", L"9000", ES_NUMBER | ES_AUTOHSCROLL);
     for (int id : {Nick, Host, Port}) {
         SendMessageW(get(id), EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
@@ -533,13 +689,16 @@ void App::initialize() {
     }
     add(Connect, L"BUTTON", L"連線聊天室", BS_OWNERDRAW);
     add(Downloads, L"BUTTON", L"下載資料夾", BS_OWNERDRAW);
-    add(Rooms, L"LISTBOX", L"", LBS_NOTIFY | WS_VSCROLL | LBS_NOINTEGRALHEIGHT);
+    add(Rooms, L"LISTBOX", L"", LBS_NOTIFY | WS_VSCROLL | LBS_NOINTEGRALHEIGHT |
+                               LBS_OWNERDRAWFIXED | LBS_HASSTRINGS);
+    SendMessageW(get(Rooms), LB_SETITEMHEIGHT, 0, px(38));
+    SetWindowSubclass(get(Rooms), roomsProcedure, 1, reinterpret_cast<DWORD_PTR>(this));
     add(Refresh, L"BUTTON", L"更新", BS_OWNERDRAW);
     add(Join, L"BUTTON", L"加入", BS_OWNERDRAW);
     add(Leave, L"BUTTON", L"離開", BS_OWNERDRAW);
     add(RoomName, L"EDIT", L"", ES_AUTOHSCROLL);
     SendMessageW(get(RoomName), EM_SETLIMITTEXT, 32, 0);
-    add(Create, L"BUTTON", L"＋ 建立房間", BS_OWNERDRAW);
+    add(Create, L"BUTTON", L"建立房間", BS_OWNERDRAW);
     add(Transcript, MSFTEDIT_CLASS, L"", ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL);
     SendMessageW(get(Transcript), EM_SETBKGNDCOLOR, 0, Surface);
     SendMessageW(get(Transcript), EM_EXLIMITTEXT, 0, 150000);
@@ -548,13 +707,19 @@ void App::initialize() {
     SendMessageW(get(Input), EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
                  MAKELPARAM(px(8), px(8)));
     SetWindowSubclass(get(Input), inputProcedure, 1, reinterpret_cast<DWORD_PTR>(this));
-    add(Send, L"BUTTON", L"傳送  →", BS_OWNERDRAW);
-    add(File, L"BUTTON", L"＋ 傳送檔案", BS_OWNERDRAW);
+    add(Send, L"BUTTON", L"傳送", BS_OWNERDRAW);
+    add(File, L"BUTTON", L"附加檔案", BS_OWNERDRAW);
     add(History, L"BUTTON", L"歷史訊息", BS_OWNERDRAW);
+    for (int id : {Connect, Downloads, Refresh, Join, Leave, Create, Send, File, History})
+        SetWindowSubclass(get(id), buttonProcedure, 1, reinterpret_cast<DWORD_PTR>(this));
+    SendMessageW(get(Nick), EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"你的暱稱"));
+    SendMessageW(get(RoomName), EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"輸入房間名稱"));
     network = std::make_unique<GuiConnection>(window, downloads);
     append(L"歡迎來到夜航。\r\n輸入暱稱，連上你的聊天室。", Muted);
-    if (!background)
+    if (!background.bitmap)
         append(L"背景圖片載入失敗。", RGB(255, 145, 145));
+    if (!assets.bitmap)
+        append(L"介面圖示載入失敗，仍可使用文字按鈕。", RGB(255, 145, 145));
     layout();
     updateControls();
     SetFocus(get(Nick));
@@ -592,7 +757,13 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
         app->paint();
         return 0;
     case WM_DRAWITEM:
-        app->drawButton(reinterpret_cast<DRAWITEMSTRUCT *>(lParam));
+        if (reinterpret_cast<DRAWITEMSTRUCT *>(lParam)->CtlID == Rooms)
+            app->drawRoom(reinterpret_cast<DRAWITEMSTRUCT *>(lParam));
+        else
+            app->drawButton(reinterpret_cast<DRAWITEMSTRUCT *>(lParam));
+        return TRUE;
+    case WM_MEASUREITEM:
+        reinterpret_cast<MEASUREITEMSTRUCT *>(lParam)->itemHeight = app->px(38);
         return TRUE;
     case WM_CTLCOLOREDIT:
     case WM_CTLCOLORLISTBOX:
