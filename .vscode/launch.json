@@ -3,6 +3,19 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Ping: HW2",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/HW2/build/ping.exe",
+            "args": ["${input:pingHost}", "-c", "${input:pingCount}"],
+            "cwd": "${workspaceFolder}/HW2",
+            "environment": [{ "name": "PATH", "value": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }],
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "preLaunchTask": "Ping: Build"
+        },
+        {
             "name": "Chat: Server",
             "type": "cppdbg",
             "request": "launch",
@@ -50,6 +63,8 @@
         }
     ],
     "inputs": [
+        { "id": "pingHost", "type": "promptString", "description": "Ping 目標 IPv4 位址或網域名稱", "default": "127.0.0.1" },
+        { "id": "pingCount", "type": "promptString", "description": "Ping 封包數量", "default": "4" },
         { "id": "nickname", "type": "promptString", "description": "聊天暱稱（英文字母、數字、_ 或 -）", "default": "Alice" }
     ]
 }

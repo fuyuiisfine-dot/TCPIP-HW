@@ -3,6 +3,23 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Ping: Configure",
+            "type": "process",
+            "command": "C:/Program Files/CMake/bin/cmake.exe",
+            "args": ["-S", "${workspaceFolder}/HW2", "-B", "${workspaceFolder}/HW2/build", "-G", "MinGW Makefiles", "-DCMAKE_BUILD_TYPE=Debug"],
+            "options": { "env": { "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}" } },
+            "problemMatcher": []
+        },
+        {
+            "label": "Ping: Build",
+            "type": "process",
+            "command": "C:/Program Files/CMake/bin/cmake.exe",
+            "args": ["--build", "${workspaceFolder}/HW2/build"],
+            "options": { "env": { "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}" } },
+            "dependsOn": "Ping: Configure",
+            "problemMatcher": ["$gcc"]
+        },
+        {
             "label": "Chat: Configure",
             "type": "process",
             "command": "C:/Program Files/CMake/bin/cmake.exe",

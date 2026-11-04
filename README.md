@@ -5,3 +5,7 @@
 - [Tailscale 使用說明書](HW1/說明書.md)
 - [技術原理與 GUI 實作教學](HW1/聊天室技術原理與GUI實作教學.md)
 - [建置與專案說明](HW1/README.md)
+
+## HW2 Ping
+
+- [ICMP Ping 程式與執行方式](HW2/README.md)
